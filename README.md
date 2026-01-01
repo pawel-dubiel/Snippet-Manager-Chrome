@@ -9,7 +9,7 @@ Browser extension that saves selected text snippets and lets you search them usi
 - Local embeddings model bundled with the extension (no network calls at runtime).
 
 ## How It Works
-- **Background**: stores snippets in `chrome.storage.sync` and triggers the flying animation.
+- **Background**: stores snippets in `chrome.storage.local` and triggers the flying animation.
 - **Popup**: loads snippets, requests embeddings via the background, and reorders results by similarity.
 - **Offscreen**: loads the local model and produces embeddings on demand.
 - **Embeddings**: `@huggingface/transformers` (Transformers.js) runs ONNX locally via `onnxruntime-web`.
@@ -41,7 +41,7 @@ Bundled into the extension so it works offline:
 - `vendor/ort.bundle.min.mjs` and `vendor/ort-wasm-simd-threaded.jsep.*` (ONNX Runtime Web)
 
 ## Data Storage
-- Snippets: `chrome.storage.sync`
+- Snippets: `chrome.storage.local`
 - Embeddings cache: `chrome.storage.local`
 
 ## Load the Extension

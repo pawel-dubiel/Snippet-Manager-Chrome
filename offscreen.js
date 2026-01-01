@@ -59,6 +59,7 @@ async function getEmbedder() {
     env.localModelPath = chrome.runtime.getURL('models/');
     env.backends.onnx.wasm.wasmPaths = chrome.runtime.getURL('vendor/');
     env.backends.onnx.wasm.numThreads = 1;
+    env.useBrowserCache = false;
 
     await ensureModelAssets();
     return pipeline('feature-extraction', MODEL_ID, { dtype: 'fp32', device: 'wasm' });

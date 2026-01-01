@@ -67,8 +67,26 @@ function setStorage(area, data) {
   });
 }
 
+function getBytesInUse(area, keys) {
+  if (!chrome.storage || !chrome.storage[area]) {
+    throw new Error(`chrome.storage.${area} is not available.`);
+  }
+  if (typeof chrome.storage[area].getBytesInUse !== 'function') {
+    throw new Error(`chrome.storage.${area}.getBytesInUse is not available.`);
+  }
+  return new Promise((resolve, reject) => {
+    chrome.storage[area].getBytesInUse(keys, (bytes) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(`Storage bytes failed: ${chrome.runtime.lastError.message}`));
+        return;
+      }
+      resolve(bytes);
+    });
+  });
+}
+
 async function loadAndDisplaySnippets() {
-  const result = await getStorage('sync', ['snippets']);
+  const result = await getStorage('local', ['snippets']);
   if (result.snippets === undefined) {
     throw new Error('Snippets storage is missing.');
   }
@@ -92,7 +110,7 @@ async function loadAndDisplaySnippets() {
     throw error;
   }
 
-  updateStorageInfo();
+  await updateStorageInfo();
   displaySnippets(snippets.map((snippet, index) => ({ snippet, index })));
 }
 
@@ -109,7 +127,7 @@ async function ensureSnippetIds() {
     return snippet;
   });
   if (updated) {
-    await setStorage('sync', { snippets });
+    await setStorage('local', { snippets });
   }
 }
 
@@ -120,11 +138,28 @@ function generateSnippetId() {
   return crypto.randomUUID();
 }
 
-function updateStorageInfo() {
-  const size = new Blob([JSON.stringify(snippets)]).size;
-  const sizeKB = (size / 1024).toFixed(2);
-  getRequiredElement('storage-used').textContent = sizeKB;
-  getRequiredElement('storage-bar').value = sizeKB;
+async function updateStorageInfo() {
+  if (!chrome.storage || !chrome.storage.local) {
+    throw new Error('chrome.storage.local is not available.');
+  }
+  if (typeof chrome.storage.local.QUOTA_BYTES !== 'number') {
+    throw new Error('chrome.storage.local.QUOTA_BYTES is not available.');
+  }
+  const quotaBytes = chrome.storage.local.QUOTA_BYTES;
+  if (!Number.isFinite(quotaBytes) || quotaBytes <= 0) {
+    throw new Error('Local storage quota is invalid.');
+  }
+  const bytesUsed = await getBytesInUse('local', null);
+  if (!Number.isFinite(bytesUsed) || bytesUsed < 0) {
+    throw new Error('Local storage usage is invalid.');
+  }
+  const usedKBValue = bytesUsed / 1024;
+  const limitKBValue = quotaBytes / 1024;
+  getRequiredElement('storage-used').textContent = usedKBValue.toFixed(2);
+  getRequiredElement('storage-limit').textContent = limitKBValue.toFixed(2);
+  const bar = getRequiredElement('storage-bar');
+  bar.max = limitKBValue;
+  bar.value = Math.min(usedKBValue, limitKBValue);
 }
 
 function displaySnippets(items) {
@@ -377,26 +412,26 @@ async function deleteSnippet(index) {
     throw new Error('Snippet not found.');
   }
   snippets.splice(index, 1);
-  await setStorage('sync', { snippets });
+  await setStorage('local', { snippets });
   if (snippet.id && embeddingsIndex[snippet.id]) {
     delete embeddingsIndex[snippet.id];
     await saveEmbeddingsIndex();
   }
-  updateDisplay();
+  await updateDisplay();
 }
 
 async function clearAllSnippets() {
   if (confirm('Are you sure you want to delete all snippets?')) {
     snippets = [];
     embeddingsIndex = {};
-    await setStorage('sync', { snippets });
+    await setStorage('local', { snippets });
     await saveEmbeddingsIndex();
-    updateDisplay();
+    await updateDisplay();
   }
 }
 
-function updateDisplay() {
-  updateStorageInfo();
+async function updateDisplay() {
+  await updateStorageInfo();
   displaySnippets(snippets.map((snippet, idx) => ({ snippet, index: idx })));
   getRequiredElement('search-input').value = '';
   setStatus('', 'idle');

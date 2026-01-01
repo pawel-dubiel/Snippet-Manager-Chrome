@@ -4,12 +4,12 @@ chrome.runtime.onInstalled.addListener(() => {
     contexts: ["selection"],
     id: "save-snippet"
   });
-  chrome.storage.sync.get(['snippets'], function(result) {
+  chrome.storage.local.get(['snippets'], function(result) {
     if (chrome.runtime.lastError) {
       throw new Error(`Failed to read snippets: ${chrome.runtime.lastError.message}`);
     }
     if (result.snippets === undefined) {
-      chrome.storage.sync.set({snippets: []}, function() {
+      chrome.storage.local.set({snippets: []}, function() {
         if (chrome.runtime.lastError) {
           throw new Error(`Failed to initialize snippets: ${chrome.runtime.lastError.message}`);
         }
@@ -128,7 +128,7 @@ async function setStorage(area, data) {
 }
 
 async function saveSnippet({ id, text, url }) {
-  const result = await getStorage('sync', ['snippets']);
+  const result = await getStorage('local', ['snippets']);
   if (!Array.isArray(result.snippets)) {
     throw new Error('Snippets storage must be an array.');
   }
@@ -139,7 +139,7 @@ async function saveSnippet({ id, text, url }) {
     url,
     date: new Date().toISOString()
   });
-  await setStorage('sync', { snippets });
+  await setStorage('local', { snippets });
 }
 
 async function loadEmbeddingsIndex() {
