@@ -129,6 +129,31 @@ function getActiveSnippets() {
   return snippets;
 }
 
+function getSortedSnippets(area) {
+  if (!STORAGE_LABELS[area]) {
+    throw new Error(`Unsupported storage area: ${area}`);
+  }
+  const list = snippetsByArea[area];
+  if (!Array.isArray(list)) {
+    throw new Error('Snippets storage must be an array.');
+  }
+  return [...list].sort((a, b) => getSnippetTimestamp(b) - getSnippetTimestamp(a));
+}
+
+function getSnippetTimestamp(snippet) {
+  if (!snippet || typeof snippet !== 'object') {
+    throw new Error('Snippet entry is invalid.');
+  }
+  if (typeof snippet.date !== 'string' || snippet.date.trim().length === 0) {
+    throw new Error('Snippet date is required for sorting.');
+  }
+  const timestamp = Date.parse(snippet.date);
+  if (!Number.isFinite(timestamp)) {
+    throw new Error('Snippet date is invalid.');
+  }
+  return timestamp;
+}
+
 function getAllSnippetItems() {
   const items = [];
   for (const area of Object.keys(snippetsByArea)) {
@@ -342,7 +367,7 @@ async function filterSnippets() {
   const query = getRequiredElement('search-input').value.trim();
   if (query.length === 0) {
     setStatus('', 'idle');
-    const activeSnippets = getActiveSnippets();
+    const activeSnippets = getSortedSnippets(activeArea);
     getRequiredElement('snippets-title').textContent = `${getAreaLabel(activeArea)} snippets`;
     displaySnippets(activeSnippets.map((snippet) => ({ snippet, area: activeArea })));
     return;
@@ -628,7 +653,7 @@ async function updateDisplay() {
   updateTabState();
   updateAreaChrome();
   await updateStorageInfo(activeArea);
-  const activeSnippets = getActiveSnippets();
+  const activeSnippets = getSortedSnippets(activeArea);
   displaySnippets(activeSnippets.map((snippet) => ({ snippet, area: activeArea })));
   getRequiredElement('search-input').value = '';
   setStatus('', 'idle');
