@@ -4,12 +4,12 @@ Browser extension that saves selected text snippets and lets you search them usi
 
 ## Features
 - Save selected text from any page using the context menu.
-- View, copy, and delete snippets in the popup.
+- View, copy, delete, and move snippets between local and synced storage in the popup.
 - Semantic search with cosine similarity ranking.
 - Local embeddings model bundled with the extension (no network calls at runtime).
 
 ## How It Works
-- **Background**: stores snippets in `chrome.storage.local` and triggers the flying animation.
+- **Background**: stores snippets in `chrome.storage.local` (default) and triggers the flying animation.
 - **Popup**: loads snippets, requests embeddings via the background, and reorders results by similarity.
 - **Offscreen**: loads the local model and produces embeddings on demand.
 - **Embeddings**: `@huggingface/transformers` (Transformers.js) runs ONNX locally via `onnxruntime-web`.
@@ -41,7 +41,8 @@ Bundled into the extension so it works offline:
 - `vendor/ort.bundle.min.mjs` and `vendor/ort-wasm-simd-threaded.jsep.*` (ONNX Runtime Web)
 
 ## Data Storage
-- Snippets: `chrome.storage.local`
+- Snippets (local tab): `chrome.storage.local`
+- Snippets (synced tab): `chrome.storage.sync`
 - Embeddings cache: `chrome.storage.local`
 
 ## Load the Extension

@@ -4,12 +4,20 @@ chrome.runtime.onInstalled.addListener(() => {
     contexts: ["selection"],
     id: "save-snippet"
   });
-  chrome.storage.local.get(['snippets'], function(result) {
+  ensureSnippetsStorage('local');
+  ensureSnippetsStorage('sync');
+});
+
+function ensureSnippetsStorage(area) {
+  if (!chrome.storage || !chrome.storage[area]) {
+    throw new Error(`chrome.storage.${area} is not available.`);
+  }
+  chrome.storage[area].get(['snippets'], function(result) {
     if (chrome.runtime.lastError) {
       throw new Error(`Failed to read snippets: ${chrome.runtime.lastError.message}`);
     }
     if (result.snippets === undefined) {
-      chrome.storage.local.set({snippets: []}, function() {
+      chrome.storage[area].set({ snippets: [] }, function() {
         if (chrome.runtime.lastError) {
           throw new Error(`Failed to initialize snippets: ${chrome.runtime.lastError.message}`);
         }
@@ -20,7 +28,7 @@ chrome.runtime.onInstalled.addListener(() => {
       throw new Error('Snippets storage must be an array.');
     }
   });
-});
+}
 
 const EMBEDDINGS_KEY = 'snippet_embeddings_v1';
 

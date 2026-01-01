@@ -1,6 +1,11 @@
 const EMBEDDINGS_KEY = 'snippet_embeddings_v1';
+const STORAGE_LABELS = Object.freeze({
+  local: 'Local',
+  sync: 'Synced'
+});
 
-let snippets = [];
+let snippetsByArea = { local: [], sync: [] };
+let activeArea = 'local';
 let embeddingsIndex = {};
 let searchToken = 0;
 
@@ -12,12 +17,20 @@ async function initialize() {
   setStatus('', 'idle');
   const clearAllButton = getRequiredElement('clear-all');
   const searchInput = getRequiredElement('search-input');
+  const localTab = getRequiredElement('tab-local');
+  const syncTab = getRequiredElement('tab-sync');
 
   clearAllButton.addEventListener('click', () => {
     void clearAllSnippets();
   });
   searchInput.addEventListener('input', () => {
     void filterSnippets();
+  });
+  localTab.addEventListener('click', () => {
+    void setActiveArea('local');
+  });
+  syncTab.addEventListener('click', () => {
+    void setActiveArea('sync');
   });
 
   await loadAndDisplaySnippets();
@@ -86,15 +99,10 @@ function getBytesInUse(area, keys) {
 }
 
 async function loadAndDisplaySnippets() {
-  const result = await getStorage('local', ['snippets']);
-  if (result.snippets === undefined) {
-    throw new Error('Snippets storage is missing.');
-  }
-  if (!Array.isArray(result.snippets)) {
-    throw new Error('Snippets storage must be an array.');
-  }
-  snippets = result.snippets;
-  await ensureSnippetIds();
+  snippetsByArea.local = await loadSnippetsForArea('local');
+  snippetsByArea.sync = await loadSnippetsForArea('sync');
+  await ensureSnippetIds('local');
+  await ensureSnippetIds('sync');
 
   embeddingsIndex = await loadEmbeddingsIndex();
   const pruned = pruneEmbeddingsIndex();
@@ -102,21 +110,50 @@ async function loadAndDisplaySnippets() {
     await saveEmbeddingsIndex();
   }
 
-  try {
-    await ensureMissingEmbeddings();
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Embedding preparation failed.';
-    setStatus(message, 'error');
-    throw error;
-  }
-
-  await updateStorageInfo();
-  displaySnippets(snippets.map((snippet, index) => ({ snippet, index })));
+  await setActiveArea(activeArea);
 }
 
-async function ensureSnippetIds() {
+function getAreaLabel(area) {
+  const label = STORAGE_LABELS[area];
+  if (!label) {
+    throw new Error(`Unsupported storage area: ${area}`);
+  }
+  return label;
+}
+
+function getActiveSnippets() {
+  const snippets = snippetsByArea[activeArea];
+  if (!Array.isArray(snippets)) {
+    throw new Error('Active snippets are invalid.');
+  }
+  return snippets;
+}
+
+async function loadSnippetsForArea(area) {
+  const result = await getStorage(area, ['snippets']);
+  if (result.snippets === undefined) {
+    throw new Error(`Snippets storage is missing for ${area}.`);
+  }
+  if (!Array.isArray(result.snippets)) {
+    throw new Error('Snippets storage must be an array.');
+  }
+  return result.snippets;
+}
+
+async function saveSnippetsForArea(area, snippets) {
+  if (!Array.isArray(snippets)) {
+    throw new Error('Snippets storage must be an array.');
+  }
+  await setStorage(area, { snippets });
+}
+
+async function ensureSnippetIds(area) {
   let updated = false;
-  snippets = snippets.map((snippet) => {
+  const current = snippetsByArea[area];
+  if (!Array.isArray(current)) {
+    throw new Error('Snippets storage must be an array.');
+  }
+  const next = current.map((snippet) => {
     if (!snippet || typeof snippet !== 'object') {
       throw new Error('Snippet entry is invalid.');
     }
@@ -126,8 +163,9 @@ async function ensureSnippetIds() {
     }
     return snippet;
   });
+  snippetsByArea[area] = next;
   if (updated) {
-    await setStorage('local', { snippets });
+    await saveSnippetsForArea(area, next);
   }
 }
 
@@ -138,20 +176,66 @@ function generateSnippetId() {
   return crypto.randomUUID();
 }
 
-async function updateStorageInfo() {
-  if (!chrome.storage || !chrome.storage.local) {
-    throw new Error('chrome.storage.local is not available.');
+function updateTabCounts() {
+  if (!Array.isArray(snippetsByArea.local) || !Array.isArray(snippetsByArea.sync)) {
+    throw new Error('Snippet storage is not initialized.');
   }
-  if (typeof chrome.storage.local.QUOTA_BYTES !== 'number') {
-    throw new Error('chrome.storage.local.QUOTA_BYTES is not available.');
+  getRequiredElement('tab-count-local').textContent = `${snippetsByArea.local.length}`;
+  getRequiredElement('tab-count-sync').textContent = `${snippetsByArea.sync.length}`;
+}
+
+function updateTabState() {
+  const localTab = getRequiredElement('tab-local');
+  const syncTab = getRequiredElement('tab-sync');
+  const isLocal = activeArea === 'local';
+  localTab.classList.toggle('active', isLocal);
+  syncTab.classList.toggle('active', !isLocal);
+  localTab.setAttribute('aria-selected', isLocal ? 'true' : 'false');
+  syncTab.setAttribute('aria-selected', isLocal ? 'false' : 'true');
+  localTab.tabIndex = isLocal ? 0 : -1;
+  syncTab.tabIndex = isLocal ? -1 : 0;
+}
+
+function updateAreaChrome() {
+  const label = getAreaLabel(activeArea);
+  getRequiredElement('snippets-title').textContent = `${label} snippets`;
+  getRequiredElement('storage-label').textContent = `${label} storage`;
+  getRequiredElement('clear-all').textContent = `Clear ${label.toLowerCase()}`;
+  getRequiredElement('search-input').placeholder = `Search ${label.toLowerCase()} snippets...`;
+}
+
+async function setActiveArea(area) {
+  if (!STORAGE_LABELS[area]) {
+    throw new Error(`Unsupported storage area: ${area}`);
   }
-  const quotaBytes = chrome.storage.local.QUOTA_BYTES;
+  activeArea = area;
+  updateTabCounts();
+  updateTabState();
+  updateAreaChrome();
+  try {
+    await ensureMissingEmbeddings(area);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Embedding preparation failed.';
+    setStatus(message, 'error');
+    throw error;
+  }
+  await updateDisplay();
+}
+
+async function updateStorageInfo(area) {
+  if (!chrome.storage || !chrome.storage[area]) {
+    throw new Error(`chrome.storage.${area} is not available.`);
+  }
+  if (typeof chrome.storage[area].QUOTA_BYTES !== 'number') {
+    throw new Error(`chrome.storage.${area}.QUOTA_BYTES is not available.`);
+  }
+  const quotaBytes = chrome.storage[area].QUOTA_BYTES;
   if (!Number.isFinite(quotaBytes) || quotaBytes <= 0) {
-    throw new Error('Local storage quota is invalid.');
+    throw new Error('Storage quota is invalid.');
   }
-  const bytesUsed = await getBytesInUse('local', null);
+  const bytesUsed = await getBytesInUse(area, null);
   if (!Number.isFinite(bytesUsed) || bytesUsed < 0) {
-    throw new Error('Local storage usage is invalid.');
+    throw new Error('Storage usage is invalid.');
   }
   const usedKBValue = bytesUsed / 1024;
   const limitKBValue = quotaBytes / 1024;
@@ -166,12 +250,15 @@ function displaySnippets(items) {
   const list = getRequiredElement('snippets-list');
   list.innerHTML = '';
   if (items.length === 0) {
+    const areaLabel = getAreaLabel(activeArea).toLowerCase();
     const empty = document.createElement('div');
     empty.className = 'empty-state';
-    empty.textContent = 'No snippets yet. Save a selection to start building your vault.';
+    empty.textContent = `No ${areaLabel} snippets yet. Save a selection to start building your vault.`;
     list.appendChild(empty);
     return;
   }
+  const targetArea = activeArea === 'local' ? 'sync' : 'local';
+  const moveLabel = activeArea === 'local' ? 'Move to Synced' : 'Move to Local';
   items.forEach((item, displayIndex) => {
     const { snippet, index, score } = item;
     const scoreMarkup = Number.isFinite(score)
@@ -185,11 +272,15 @@ function displaySnippets(items) {
       ${scoreMarkup}
       <div class="snippet-actions">
         <button type="button" id="copy-${displayIndex}" class="btn btn-primary">Copy</button>
+        <button type="button" id="move-${displayIndex}" class="btn btn-move">${moveLabel}</button>
         <button type="button" id="delete-${displayIndex}" class="btn btn-danger">Delete</button>
       </div>
     `;
     list.appendChild(div);
     getRequiredElement(`copy-${displayIndex}`).addEventListener('click', () => copySnippet(index));
+    getRequiredElement(`move-${displayIndex}`).addEventListener('click', () => {
+      void moveSnippet(index, targetArea);
+    });
     getRequiredElement(`delete-${displayIndex}`).addEventListener('click', () => {
       void deleteSnippet(index);
     });
@@ -200,7 +291,8 @@ async function filterSnippets() {
   const query = getRequiredElement('search-input').value.trim();
   if (query.length === 0) {
     setStatus('', 'idle');
-    displaySnippets(snippets.map((snippet, index) => ({ snippet, index })));
+    const activeSnippets = getActiveSnippets();
+    displaySnippets(activeSnippets.map((snippet, index) => ({ snippet, index })));
     return;
   }
 
@@ -226,13 +318,14 @@ async function filterSnippets() {
 }
 
 async function rankSnippets(query) {
-  if (snippets.length === 0) {
+  const activeSnippets = getActiveSnippets();
+  if (activeSnippets.length === 0) {
     return [];
   }
   const queryVector = await embedQuery(query);
   const scored = [];
 
-  for (const [index, snippet] of snippets.entries()) {
+  for (const [index, snippet] of activeSnippets.entries()) {
     const vector = getSnippetVector(snippet);
     const score = getCosineSimilarity(queryVector, vector);
     scored.push({ snippet, index, score });
@@ -292,7 +385,19 @@ async function saveEmbeddingsIndex() {
 }
 
 function pruneEmbeddingsIndex() {
-  const ids = new Set(snippets.map((snippet) => snippet.id));
+  const ids = new Set();
+  for (const area of Object.keys(snippetsByArea)) {
+    const list = snippetsByArea[area];
+    if (!Array.isArray(list)) {
+      throw new Error('Snippets storage must be an array.');
+    }
+    for (const snippet of list) {
+      if (!snippet || typeof snippet !== 'object' || !snippet.id) {
+        throw new Error('Snippet entry is invalid.');
+      }
+      ids.add(snippet.id);
+    }
+  }
   let changed = false;
   for (const id of Object.keys(embeddingsIndex)) {
     if (!ids.has(id)) {
@@ -303,7 +408,11 @@ function pruneEmbeddingsIndex() {
   return changed;
 }
 
-async function ensureMissingEmbeddings() {
+async function ensureMissingEmbeddings(area) {
+  const snippets = snippetsByArea[area];
+  if (!Array.isArray(snippets)) {
+    throw new Error('Snippets storage must be an array.');
+  }
   if (snippets.length === 0) {
     return;
   }
@@ -393,7 +502,7 @@ function getCosineSimilarity(a, b) {
 }
 
 function copySnippet(index) {
-  const snippet = snippets[index];
+  const snippet = getActiveSnippets()[index];
   if (!snippet || typeof snippet.text !== 'string') {
     throw new Error('Snippet text is missing.');
   }
@@ -407,32 +516,68 @@ function copySnippet(index) {
 }
 
 async function deleteSnippet(index) {
-  const snippet = snippets[index];
+  const activeSnippets = getActiveSnippets();
+  const snippet = activeSnippets[index];
   if (!snippet) {
     throw new Error('Snippet not found.');
   }
-  snippets.splice(index, 1);
-  await setStorage('local', { snippets });
-  if (snippet.id && embeddingsIndex[snippet.id]) {
-    delete embeddingsIndex[snippet.id];
+  activeSnippets.splice(index, 1);
+  await saveSnippetsForArea(activeArea, activeSnippets);
+  const pruned = pruneEmbeddingsIndex();
+  if (pruned) {
     await saveEmbeddingsIndex();
   }
   await updateDisplay();
 }
 
 async function clearAllSnippets() {
-  if (confirm('Are you sure you want to delete all snippets?')) {
-    snippets = [];
-    embeddingsIndex = {};
-    await setStorage('local', { snippets });
-    await saveEmbeddingsIndex();
-    await updateDisplay();
+  const label = getAreaLabel(activeArea).toLowerCase();
+  if (!confirm(`Are you sure you want to delete all ${label} snippets?`)) {
+    return;
   }
+  snippetsByArea[activeArea] = [];
+  await saveSnippetsForArea(activeArea, []);
+  const pruned = pruneEmbeddingsIndex();
+  if (pruned) {
+    await saveEmbeddingsIndex();
+  }
+  await updateDisplay();
 }
 
 async function updateDisplay() {
-  await updateStorageInfo();
-  displaySnippets(snippets.map((snippet, idx) => ({ snippet, index: idx })));
+  updateTabCounts();
+  updateTabState();
+  updateAreaChrome();
+  await updateStorageInfo(activeArea);
+  const activeSnippets = getActiveSnippets();
+  displaySnippets(activeSnippets.map((snippet, idx) => ({ snippet, index: idx })));
   getRequiredElement('search-input').value = '';
   setStatus('', 'idle');
+}
+
+async function moveSnippet(index, targetArea) {
+  if (!STORAGE_LABELS[targetArea]) {
+    throw new Error(`Unsupported storage area: ${targetArea}`);
+  }
+  if (targetArea === activeArea) {
+    throw new Error('Target storage area must be different.');
+  }
+  const sourceSnippets = getActiveSnippets();
+  const snippet = sourceSnippets[index];
+  if (!snippet) {
+    throw new Error('Snippet not found.');
+  }
+  const destinationSnippets = snippetsByArea[targetArea];
+  if (!Array.isArray(destinationSnippets)) {
+    throw new Error('Destination snippets are invalid.');
+  }
+  if (destinationSnippets.some((item) => item && item.id === snippet.id)) {
+    throw new Error('Snippet already exists in target storage.');
+  }
+  sourceSnippets.splice(index, 1);
+  destinationSnippets.push(snippet);
+  await saveSnippetsForArea(activeArea, sourceSnippets);
+  await saveSnippetsForArea(targetArea, destinationSnippets);
+  updateTabCounts();
+  await updateDisplay();
 }
