@@ -4,6 +4,7 @@ Browser extension that saves selected text snippets and lets you search them usi
 
 ## Features
 - Save selected text from any page using the context menu.
+- Add snippets manually from the popup.
 - View, copy, delete, and move snippets between local and synced storage in the popup.
 - Semantic search with cosine similarity ranking.
 - Local embeddings model bundled with the extension (no network calls at runtime).

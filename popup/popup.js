@@ -6,6 +6,7 @@ const STORAGE_LABELS = Object.freeze({
 
 let snippetsByArea = { local: [], sync: [] };
 let activeArea = 'local';
+let addTargetArea = 'local';
 let embeddingsIndex = {};
 let searchToken = 0;
 
@@ -19,6 +20,13 @@ async function initialize() {
   const searchInput = getRequiredElement('search-input');
   const localTab = getRequiredElement('tab-local');
   const syncTab = getRequiredElement('tab-sync');
+  const addButton = getRequiredElement('add-snippet');
+  const addPanel = getRequiredElement('add-panel');
+  const addInput = getRequiredElement('add-input');
+  const addSave = getRequiredElement('add-save');
+  const addCancel = getRequiredElement('add-cancel');
+  const addAreaLocal = getRequiredElement('add-area-local');
+  const addAreaSync = getRequiredElement('add-area-sync');
 
   clearAllButton.addEventListener('click', () => {
     void clearAllSnippets();
@@ -31,6 +39,27 @@ async function initialize() {
   });
   syncTab.addEventListener('click', () => {
     void setActiveArea('sync');
+  });
+  addButton.addEventListener('click', () => {
+    toggleAddPanel();
+  });
+  addCancel.addEventListener('click', () => {
+    closeAddPanel();
+  });
+  addSave.addEventListener('click', () => {
+    void handleAddSnippet();
+  });
+  addAreaLocal.addEventListener('click', () => {
+    setAddTargetArea('local');
+  });
+  addAreaSync.addEventListener('click', () => {
+    setAddTargetArea('sync');
+  });
+  addInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+      event.preventDefault();
+      void handleAddSnippet();
+    }
   });
 
   await loadAndDisplaySnippets();
@@ -270,6 +299,9 @@ async function setActiveArea(area) {
   updateTabCounts();
   updateTabState();
   updateAreaChrome();
+  if (isAddPanelOpen()) {
+    setAddTargetArea(area);
+  }
   try {
     await ensureMissingEmbeddings(area);
   } catch (error) {
@@ -302,6 +334,90 @@ async function updateStorageInfo(area) {
   const bar = getRequiredElement('storage-bar');
   bar.max = limitKBValue;
   bar.value = Math.min(usedKBValue, limitKBValue);
+}
+
+function isAddPanelOpen() {
+  const panel = getRequiredElement('add-panel');
+  return !panel.hidden;
+}
+
+function toggleAddPanel() {
+  if (isAddPanelOpen()) {
+    closeAddPanel();
+    return;
+  }
+  openAddPanel();
+}
+
+function openAddPanel() {
+  const panel = getRequiredElement('add-panel');
+  panel.hidden = false;
+  setAddTargetArea(activeArea);
+  const input = getRequiredElement('add-input');
+  input.focus();
+}
+
+function closeAddPanel() {
+  const panel = getRequiredElement('add-panel');
+  panel.hidden = true;
+  const input = getRequiredElement('add-input');
+  input.value = '';
+  setStatus('', 'idle');
+}
+
+function setAddTargetArea(area) {
+  if (!STORAGE_LABELS[area]) {
+    throw new Error(`Unsupported storage area: ${area}`);
+  }
+  addTargetArea = area;
+  const label = getAreaLabel(area);
+  getRequiredElement('add-target-label').textContent = `Saving to ${label}`;
+  const localToggle = getRequiredElement('add-area-local');
+  const syncToggle = getRequiredElement('add-area-sync');
+  const isLocal = area === 'local';
+  localToggle.classList.toggle('active', isLocal);
+  syncToggle.classList.toggle('active', !isLocal);
+}
+
+async function handleAddSnippet() {
+  try {
+    const input = getRequiredElement('add-input');
+    const text = input.value.trim();
+    if (text.length === 0) {
+      throw new Error('Snippet text is required.');
+    }
+    const area = addTargetArea;
+    if (!STORAGE_LABELS[area]) {
+      throw new Error(`Unsupported storage area: ${area}`);
+    }
+    const snippet = {
+      id: generateSnippetId(),
+      text,
+      url: 'manual',
+      date: new Date().toISOString()
+    };
+    const list = snippetsByArea[area];
+    if (!Array.isArray(list)) {
+      throw new Error('Snippets storage must be an array.');
+    }
+    list.push(snippet);
+    await saveSnippetsForArea(area, list);
+    const response = await sendRuntimeMessage({
+      action: 'ensureEmbeddings',
+      items: [{ id: snippet.id, text: snippet.text }]
+    });
+    if (!response || response.ok !== true) {
+      const message = response && response.error ? response.error : 'Embedding preparation failed.';
+      throw new Error(message);
+    }
+    embeddingsIndex = await loadEmbeddingsIndex();
+    closeAddPanel();
+    await setActiveArea(area);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to add snippet.';
+    setStatus(message, 'error');
+    throw error;
+  }
 }
 
 function displaySnippets(items) {

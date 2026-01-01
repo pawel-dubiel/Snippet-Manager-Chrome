@@ -1,5 +1,6 @@
 let animationElement = null;
 let lastSelectionPosition = null;
+const INPUT_TEXT_TYPES = new Set(['text', 'search', 'url', 'email', 'tel']);
 
 document.addEventListener('contextmenu', () => {
   const selectionPosition = getSelectionPosition();
@@ -9,6 +10,10 @@ document.addEventListener('contextmenu', () => {
 });
 
 function getSelectionPosition() {
+  const inputSelection = getInputSelection();
+  if (inputSelection) {
+    return inputSelection;
+  }
   const selection = window.getSelection();
   if (!selection || selection.rangeCount === 0) {
     return null;
@@ -26,6 +31,49 @@ function getSelectionPosition() {
     x: rect.left,
     y: rect.top,
     text: selectedText
+  };
+}
+
+function getInputSelection() {
+  const active = document.activeElement;
+  if (!active) {
+    return null;
+  }
+  if (active.tagName === 'INPUT') {
+    const type = typeof active.type === 'string' ? active.type.toLowerCase() : '';
+    if (!INPUT_TEXT_TYPES.has(type)) {
+      return null;
+    }
+    return getFormSelection(active);
+  }
+  if (active.tagName === 'TEXTAREA') {
+    return getFormSelection(active);
+  }
+  return null;
+}
+
+function getFormSelection(element) {
+  if (!element || typeof element.value !== 'string') {
+    return null;
+  }
+  if (typeof element.selectionStart !== 'number' || typeof element.selectionEnd !== 'number') {
+    return null;
+  }
+  if (element.selectionStart === element.selectionEnd) {
+    return null;
+  }
+  const text = element.value.substring(element.selectionStart, element.selectionEnd);
+  if (!text.trim()) {
+    return null;
+  }
+  const rect = element.getBoundingClientRect();
+  if (!Number.isFinite(rect.left) || !Number.isFinite(rect.top)) {
+    return null;
+  }
+  return {
+    x: rect.left + 8,
+    y: rect.top + 8,
+    text
   };
 }
 
@@ -125,5 +173,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
     createAnimationElement(request.text, selectionPosition.x, selectionPosition.y);
     lastSelectionPosition = null;
+  }
+  if (request.action === 'getSelectedText') {
+    const selectionPosition = getSelectionPosition();
+    if (!selectionPosition) {
+      sendResponse({ ok: false, error: 'No selection found.' });
+      return;
+    }
+    lastSelectionPosition = selectionPosition;
+    sendResponse({ ok: true, text: selectionPosition.text });
   }
 });

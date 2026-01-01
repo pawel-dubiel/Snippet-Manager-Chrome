@@ -116,6 +116,12 @@
       color: var(--muted);
     }
 
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
     .panel {
       background: var(--card);
       border: 1px solid var(--stroke);
@@ -418,6 +424,10 @@
       border: 1px solid var(--stroke);
     }
 
+    .btn-add {
+      padding: 8px 14px;
+    }
+
     .btn-move {
       background: #f8efe6;
       color: #5b3f28;
@@ -440,6 +450,91 @@
       color: var(--muted);
       background: rgba(255, 250, 244, 0.7);
     }
+
+    .add-panel {
+      display: grid;
+      gap: 10px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .add-panel[hidden] {
+      display: none;
+    }
+
+    .add-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .add-title {
+      font-family: var(--font-display);
+      font-size: 16px;
+    }
+
+    .add-subtitle {
+      font-size: 11px;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .add-toggle {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+    }
+
+    .toggle-button {
+      border: 1px solid rgba(230, 212, 194, 0.9);
+      border-radius: 999px;
+      padding: 8px 10px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      background: #fffdfb;
+      color: var(--muted);
+      cursor: pointer;
+      transition: background 180ms ease, color 180ms ease, box-shadow 180ms ease;
+    }
+
+    .toggle-button.active {
+      background: linear-gradient(135deg, #fffaf4, #f8dcc2);
+      color: var(--ink);
+      box-shadow: 0 6px 14px rgba(29, 25, 20, 0.12);
+    }
+
+    .toggle-button:focus-visible {
+      outline: 2px solid rgba(200, 90, 26, 0.5);
+      outline-offset: 2px;
+    }
+
+    #add-input {
+      width: 100%;
+      min-height: 90px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px solid var(--stroke);
+      background: #fffdfb;
+      font-size: 13px;
+      font-family: var(--font-body);
+      color: var(--ink);
+      resize: vertical;
+    }
+
+    #add-input:focus {
+      outline: none;
+      border-color: rgba(200, 90, 26, 0.6);
+      box-shadow: 0 0 0 3px rgba(200, 90, 26, 0.18);
+    }
+
+    .add-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+    }
   </style>
 </head>
 <body>
@@ -452,8 +547,27 @@
           <div class="brand-subtitle">Collect highlights in one click</div>
         </div>
       </div>
-      <button type="button" id="clear-all" class="btn btn-ghost">Clear all</button>
+      <div class="header-actions">
+        <button type="button" id="add-snippet" class="btn btn-primary btn-add">+ Add</button>
+        <button type="button" id="clear-all" class="btn btn-ghost">Clear all</button>
+      </div>
     </header>
+
+    <section class="panel add-panel" id="add-panel" hidden>
+      <div class="add-header">
+        <div class="add-title">Add snippet</div>
+        <div class="add-subtitle" id="add-target-label">Saving to Local</div>
+      </div>
+      <div class="add-toggle" role="group" aria-label="Add snippet storage">
+        <button type="button" class="toggle-button" id="add-area-local" data-area="local">Local</button>
+        <button type="button" class="toggle-button" id="add-area-sync" data-area="sync">Synced</button>
+      </div>
+      <textarea id="add-input" placeholder="Paste or type a snippet..." aria-label="Snippet text"></textarea>
+      <div class="add-actions">
+        <button type="button" id="add-save" class="btn btn-primary">Save snippet</button>
+        <button type="button" id="add-cancel" class="btn btn-ghost">Cancel</button>
+      </div>
+    </section>
 
     <section class="panel">
       <div class="storage-row">

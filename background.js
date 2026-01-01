@@ -1,7 +1,7 @@
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
     title: "Save as Snippet",
-    contexts: ["selection"],
+    contexts: ["selection", "editable"],
     id: "save-snippet"
   });
   ensureSnippetsStorage('local');
@@ -54,7 +54,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 async function handleSaveSnippet(info, tab) {
-  const selectedText = info.selectionText;
+  let selectedText = typeof info.selectionText === 'string' ? info.selectionText : '';
+  if (typeof selectedText !== 'string' || selectedText.trim().length === 0) {
+    if (typeof tab.id !== 'number') {
+      throw new Error('Tab ID is required to read selection.');
+    }
+    selectedText = await requestSelectedText(tab.id);
+  }
   if (typeof selectedText !== 'string' || selectedText.trim().length === 0) {
     throw new Error('Selected text is required to save a snippet.');
   }
@@ -221,6 +227,26 @@ async function embedText(text) {
         resolve(response.vector);
       }
     );
+  });
+}
+
+async function requestSelectedText(tabId) {
+  if (typeof tabId !== 'number') {
+    throw new Error('Tab ID is required to request selection.');
+  }
+  return new Promise((resolve, reject) => {
+    chrome.tabs.sendMessage(tabId, { action: 'getSelectedText' }, (response) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(`Failed to read selection: ${chrome.runtime.lastError.message}`));
+        return;
+      }
+      if (!response || response.ok !== true || typeof response.text !== 'string') {
+        const message = response && response.error ? response.error : 'No selection available.';
+        reject(new Error(message));
+        return;
+      }
+      resolve(response.text);
+    });
   });
 }
 
